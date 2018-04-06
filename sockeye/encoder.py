@@ -173,6 +173,8 @@ def get_transformer_encoder(config: transformer.TransformerConfig, prefix: str) 
     :param prefix: Prefix for variable names.
     :return: Encoder instance.
     """
+    config.__delattr__('_frozen')
+    config.dtype = 'float16'
     encoder_seq = EncoderSequence([], dtype=config.dtype)
     cls, encoder_params = _get_positional_embedding_params(config.positional_embedding_type,
                                                            config.model_size,
@@ -930,6 +932,7 @@ class TransformerEncoder(Encoder):
         :param seq_len: Maximum sequence length.
         :return: Encoded versions of input data data, data_length, seq_len.
         """
+        data = mx.sym.cast(data=data, dtype=self.dtype)
         if self.config.dropout_prepost > 0.0:
             data = mx.sym.Dropout(data=data, p=self.config.dropout_prepost)
 
@@ -939,11 +942,12 @@ class TransformerEncoder(Encoder):
                                                                        num_heads=self.config.attention_heads,
                                                                        fold_heads=True,
                                                                        name="%sbias" % self.prefix), axis=1)
-
+        bias = mx.sym.cast(data=bias, dtype=self.dtype)
         for i, layer in enumerate(self.layers):
             # (batch_size, seq_len, config.model_size)
             data = layer(data, bias)
         data = self.final_process(data=data, prev=None)
+        data = mx.sym.cast(data=data, dtype='float32')
         return data, data_length, seq_len
 
     def get_num_hidden(self) -> int:

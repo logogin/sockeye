@@ -69,6 +69,7 @@ class TransformerEncoderBlock:
     def __init__(self,
                  config: TransformerConfig,
                  prefix: str) -> None:
+        self.dtype = config.dtype
         self.pre_self_attention = TransformerProcessBlock(sequence=config.preprocess_sequence,
                                                           num_hidden=config.model_size,
                                                           dropout=config.dropout_prepost,
@@ -120,6 +121,7 @@ class TransformerDecoderBlock:
     def __init__(self,
                  config: TransformerConfig,
                  prefix: str) -> None:
+        self.dtype = config.dtype
         self.prefix = prefix
         self.pre_self_attention = TransformerProcessBlock(sequence=config.preprocess_sequence,
                                                           num_hidden=config.model_size,
@@ -291,14 +293,15 @@ class VariableLengthBias(mx.operator.CustomOp):
     def forward(self, is_train, req, in_data, out_data, aux):
         # lengths: (batch_size,)
         lengths = in_data[0]
+        dtype = lengths.dtype
 
         # (batch_size, max_length)
-        data = mx.nd.zeros((lengths.shape[0], self.max_length), ctx=lengths.context)
+        data = mx.nd.zeros((lengths.shape[0], self.max_length), dtype=dtype, ctx=lengths.context)
         data = mx.nd.SequenceMask(data=data,
                                   use_sequence_length=True,
                                   sequence_length=lengths,
                                   axis=1,
-                                  value=C.LARGE_NEGATIVE_VALUE)
+                                  value=np.finfo(dtype).min)
         self.assign(out_data[0], req[0], data)
 
     def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
@@ -323,7 +326,7 @@ class VariableLengthBiasProp(mx.operator.CustomOpProp):
         return in_shape, [(batch_size, self.max_length)], []
 
     def infer_type(self, in_type):
-        return in_type, [np.float32], []
+        return in_type, in_type, []
 
     def create_operator(self, ctx, shapes, dtypes):
         return VariableLengthBias(max_length=self.max_length)
